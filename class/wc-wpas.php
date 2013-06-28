@@ -22,9 +22,14 @@ class WC_WPAS {
 
 		$postback = $this->parse_postback();
 
+		$_POST['billing_email'] = $postback['username'];
+		$_POST['billing_first_name'] = $postback['first_name'];
+		$_POST['billing_last_name'] = $postback['last_name'];
+
 		// Hook in
 		add_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
 		add_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
+		add_action( 'woocommerce_payment_complete', array( $this, 'order_complete' ) );
 
 		$user = get_user_by( 'login', $postback['username'] );
 
@@ -51,13 +56,16 @@ class WC_WPAS {
 		// remove temp filters
 		remove_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
 		remove_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
+		remove_action( 'woocommerce_payment_complete', array( $this, 'order_complete' ) );
 
 		exit;
 	}
 
 	function parse_postback() {
-		$postback['username'] = $_GET['user'];
-		$postback['sku'] = $_GET['sku'];
+		$postback['username'] = $_POST['customer']['email'];
+		$postback['first_name'] = $_POST['customer']['first_name'];
+		$postback['last_name'] = $_POST['customer']['last_name'];
+		$postback['sku'] = $_POST['product']['sku'];
 		return $postback;
 	}
 
@@ -71,13 +79,42 @@ class WC_WPAS {
 		$fields['billing']['billing_city']['required'] = false;
 		$fields['billing']['billing_state']['required'] = false;
 		$fields['billing']['billing_postcode']['required'] = false;
-		$fields['billing']['billing_email']['required'] = false;
+		//$fields['billing']['billing_email']['required'] = false;
 		$fields['billing']['billing_phone']['required'] = false;
 	return $fields;
 	}
 
 	function temporarily_disable_payment() {
 		return false;
+	}
+
+	function add_order_note( $order_id, $note ) {
+
+		if ( isset( $_SERVER['HTTP_HOST'] ) )
+			$comment_author_email 	= sanitize_email( strtolower( __( 'WooCommerce', 'woocommerce' ) ) . '@' . str_replace( 'www.', '', $_SERVER['HTTP_HOST'] ) );
+		else
+			$comment_author_email 	= sanitize_email( strtolower( __( 'WooCommerce', 'woocommerce' ) ) . '@noreply.com' );
+
+		$comment_post_ID 		= $order_id;
+		$comment_author 		= __( 'WooCommerce', 'woocommerce' );
+		$comment_author_url 	= '';
+		$comment_content 		= $note;
+		$comment_agent			= 'WooCommerce';
+		$comment_type			= 'order_note';
+		$comment_parent			= 0;
+		$comment_approved 		= 1;
+		$commentdata 			= compact( 'comment_post_ID', 'comment_author', 'comment_author_email', 'comment_author_url', 'comment_content', 'comment_agent', 'comment_type', 'comment_parent', 'comment_approved' );
+
+		$comment_id = wp_insert_comment( $commentdata );
+
+		add_comment_meta( $comment_id, 'is_customer_note', false );
+
+		return $comment_id;
+	}
+
+	function order_complete( $order_id ) {
+		add_post_meta( $order_id, '_woocommerce_is_wpas_integration', true, true );
+		$this->add_order_note( $order_id, 'This order was automatically added as a result of a purchase originating at WP App Store.' );
 	}
 
 }
