@@ -32,36 +32,41 @@ class WC_WPAS {
 		$_POST['billing_first_name'] = $postback['first_name'];
 		$_POST['billing_last_name'] = $postback['last_name'];
 
-		// Hook in
+		// Hook in our custom actions and filters
 		add_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
 		add_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
 		add_action( 'woocommerce_payment_complete', array( $this, 'order_complete' ) );
 
 		$user = get_user_by( 'login', $postback['username'] );
 
-		// user exists in the system
+		// User exists in the system
 		if( $user !== false ) {
 			$user_id = $user->ID;
-			// log the user in
+			// Log the user in
 			wp_set_current_user( $user_id, $postback['username'] );
 			wp_set_auth_cookie( $user_id );
 			do_action( 'wp_login', $postback['username'] );
 		}
 		else {
-			// user does not exist, create a new user account for them (let Woo handle it though)
+			// User does not exist, create a new user account for them (let Woo handle it though)
 			$password = wp_generate_password();
 			$_POST['account_password'] = $password;
 			$_POST['account_password-2'] = $password;
 		}
 
+		// Required, otherwise WooCommerce rejects the request
 		$_REQUEST['_n'] = wp_create_nonce( 'woocommerce-process_checkout' );
 
+		// It's possible that a session was manually created by a logged in user, if so we clear the cart for good measure
 		$woocommerce->cart->empty_cart();
+
+		// Here's where the magic happens, adds the product to the cart and processes the checkout
+		// All the regular WooCommerce filters and actions are added so any licenses / subscriptions / email are also processed
 		$woocommerce->cart->add_to_cart( $postback['sku'], 1 );
 		$checkout = $woocommerce->checkout();
 		$checkout->process_checkout();
 
-		// remove temp filters
+		// remove the temporary filters / actions, not sure if it's completely required, here for good measure anyway
 		remove_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
 		remove_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
 		remove_action( 'woocommerce_payment_complete', array( $this, 'order_complete' ) );
@@ -72,6 +77,7 @@ class WC_WPAS {
 		exit;
 	}
 
+	// Here we parse the postback into a common format
 	function parse_postback() {
 		if( isset( $_GET['user'] ) ) { // test the URL directly
 			$postback['username'] = $_GET['user'];
@@ -90,7 +96,8 @@ class WC_WPAS {
 		return $postback;
 	}
 
-	// Our hooked in function - $fields is passed via the filter!
+	// Most of the billing information is not provided by the WP App Store postback
+	// we disable the required fields here so that we don't run into errors later
 	function temporarily_remove_required_fields( $fields ) {
 		$fields['billing']['billing_country']['required'] = false;
 		$fields['billing']['billing_first_name']['required'] = false;
@@ -105,10 +112,13 @@ class WC_WPAS {
 		return $fields;
 	}
 
+	// The payment is processed via WP App Store, no need to process additional payment via WooCommerce
 	function temporarily_disable_payment() {
 		return false;
 	}
 
+	// The order is completed, here you can add custom code to add special comments / metadata
+	// You may also want to do some custom actions, i.e. sending additional email notifications etc
 	function order_complete( $order_id ) {
 		$order = new WC_Order( $order_id );
 		$order->add_order_note( 'This order was automatically added as a result of a purchase originating at WP App Store.' );
