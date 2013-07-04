@@ -2,6 +2,7 @@
 class WC_WPAS {
 	private $api_key;
 	private $sku_prefix;
+	private $email_errors;
 
 	function __construct() {
 		/*
@@ -23,6 +24,9 @@ class WC_WPAS {
 
 		// SKU prefix that you use on all your products in WP App Store
 		$this->sku_prefix = '';
+
+		// Email address where you'd like to receive errors
+		$this->email_errors = '';
 	}
 
 	function process_postback() {
@@ -74,6 +78,10 @@ class WC_WPAS {
 		remove_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
 		remove_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
 		remove_action( 'woocommerce_payment_complete', array( $this, 'order_complete' ) );
+
+		if ( $this->email_errors && $woocommerce->errors ) {
+			mail( $this->email_errors, 'WP App Store postback error', print_r( $woocommerce->errors, true ) );
+		}
 
 		// check for errors
 		// echo '<pre>' . print_r( $woocommerce->errors, true ) . '</pre>';
