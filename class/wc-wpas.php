@@ -30,6 +30,8 @@ class WC_WPAS {
 		$_POST['billing_first_name'] = $postback['first_name'];
 		$_POST['billing_last_name'] = $postback['last_name'];
 
+		$_POST['terms'] = 1; // Accept terms & conditions
+
 		// Hook in our custom actions and filters
 		add_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
 		add_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
