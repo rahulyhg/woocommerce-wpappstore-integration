@@ -5,18 +5,8 @@ class WC_WPAS {
 	private $email_errors;
 
 	function __construct() {
-		/*
-		The WooCommerce API lets plugins make a callback to a special URL which will then
-		load the specified class (if it exists) and run an action. 
-
-		To trigger the WooCommerce API you need to use a special URL. Pre-2.0 you could use: 
-		http://yoursite.com/?wc-api=CALLBACK
-
-		In WooCommerce 2.0 you can still use that, or you can use our endpoint: 
-		http://yoursite.com/wc-api/CALLBACK/
-
-		Source: http://docs.woothemes.com/document/wc_api-the-woocommerce-api-callback/
-		*/
+		// We are extending the WooCommerce API here, so your postback URL will be:
+		// http://yoursite.com/wc-api/wpappstore-integration/
 		add_action( 'woocommerce_api_wpappstore-integration', array( $this, 'process_postback' ) );
 
 		// hardcoded api key - verify that the request is coming from a trusted source
