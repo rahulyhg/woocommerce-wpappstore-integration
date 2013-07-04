@@ -1,6 +1,7 @@
 <?php
 class WC_WPAS {
 	private $api_key;
+	private $sku_prefix;
 
 	function __construct() {
 		/*
@@ -18,7 +19,10 @@ class WC_WPAS {
 		add_action( 'woocommerce_api_wpappstore-integration', array( $this, 'process_postback' ) );
 
 		// hardcoded api key - verify that the request is coming from a trusted source
-		$this->api_key = 'test_key';
+		$this->api_key = '';
+
+		// SKU prefix that you use on all your products in WP App Store
+		$this->sku_prefix = '';
 	}
 
 	function process_postback() {
@@ -62,7 +66,7 @@ class WC_WPAS {
 
 		// Here's where the magic happens, adds the product to the cart and processes the checkout
 		// All the regular WooCommerce filters and actions are added so any licenses / subscriptions / email are also processed
-		$woocommerce->cart->add_to_cart( $postback['sku'], 1 );
+		$woocommerce->cart->add_to_cart( str_replace( $this->sku_prefix, '', $postback['sku'] ), 1 );
 		$checkout = $woocommerce->checkout();
 		$checkout->process_checkout();
 
