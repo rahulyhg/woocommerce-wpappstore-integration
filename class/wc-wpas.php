@@ -125,9 +125,8 @@ class WC_WPAS {
 	// You may also want to do some custom actions, i.e. sending additional email notifications etc
 	function order_complete( $order_id ) {
 		$order = new WC_Order( $order_id );
-		$order->add_order_note( 'This order was automatically added as a result of a purchase originating at WP App Store.' );
+		$order->add_order_note( 'Order created from a WP App Store postback.' );
 		add_post_meta( $order_id, '_woocommerce_is_wpas_integration', true, true );
 	}
 
 }
-?>
