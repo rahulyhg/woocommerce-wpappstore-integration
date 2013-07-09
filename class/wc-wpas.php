@@ -1,6 +1,7 @@
 <?php
 class WC_WPAS {
 	private $api_key;
+	private $postback;
 
 	function __construct() {
 		/*
@@ -25,6 +26,7 @@ class WC_WPAS {
 		global $woocommerce;
 
 		$postback = $this->parse_postback();
+		$this->postback = $postback;
 
 		if( $postback['api_key'] != $this->api_key ) wp_die( 'Cheatin\' eh?' );
 
@@ -85,6 +87,7 @@ class WC_WPAS {
 			$postback['last_name'] = $_GET['last_name'];
 			$postback['sku'] = $_GET['sku'];
 			$postback['api_key'] = $_GET['api_key'];
+			$postback['commission'] = $_GET['commission'];
 		}
 		else { // using the WP App Store postback data structure
 			$postback['username'] = $_POST['customer']['email'];
@@ -92,6 +95,7 @@ class WC_WPAS {
 			$postback['last_name'] = $_POST['customer']['last_name'];
 			$postback['sku'] = $_POST['product']['sku'];
 			$postback['api_key'] = $_POST['api_key'];
+			$postback['commission'] = $_POST['commission']['amount'];
 		}
 		return $postback;
 	}
@@ -120,6 +124,7 @@ class WC_WPAS {
 	// The order is completed, here you can add custom code to add special comments / metadata
 	// You may also want to do some custom actions, i.e. sending additional email notifications etc
 	function order_complete( $order_id ) {
+		update_post_meta( $order_id, '_order_total', $this->postback['commission'] );
 		$order = new WC_Order( $order_id );
 		$order->add_order_note( 'This order was automatically added as a result of a purchase originating at WP App Store.' );
 		add_post_meta( $order_id, '_woocommerce_is_wpas_integration', true, true );
