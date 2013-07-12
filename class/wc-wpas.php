@@ -2,7 +2,7 @@
 class WC_WPAS {
 	private $api_key;
 	private $postback;
-	private $user_was_created;
+	private $user_was_created = false;
 	private $sku_prefix;
 	private $email_errors;
 
@@ -11,7 +11,6 @@ class WC_WPAS {
 		// http://yoursite.com/wc-api/wpappstore-integration/
 		add_action( 'woocommerce_api_wpappstore-integration', array( $this, 'process_postback' ) );
 
-		http://yoursite.com/?wc-api=CALLBACK
 		// hardcoded api key - verify that the request is coming from a trusted source
 		$this->api_key = '';
 
@@ -20,8 +19,6 @@ class WC_WPAS {
 
 		// Email address where you'd like to receive errors
 		$this->email_errors = '';
-
-		$user_was_created = false;
 	}
 
 	function process_postback() {
