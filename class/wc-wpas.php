@@ -3,24 +3,23 @@ class WC_WPAS {
 	private $api_key;
 	private $postback;
 	private $user_was_created;
+	private $sku_prefix;
+	private $email_errors;
 
 	function __construct() {
-		/*
-		The WooCommerce API lets plugins make a callback to a special URL which will then
-		load the specified class (if it exists) and run an action. 
-
-		To trigger the WooCommerce API you need to use a special URL. Pre-2.0 you could use: 
-		http://yoursite.com/?wc-api=CALLBACK
-
-		In WooCommerce 2.0 you can still use that, or you can use our endpoint: 
-		http://yoursite.com/wc-api/CALLBACK/
-
-		Source: http://docs.woothemes.com/document/wc_api-the-woocommerce-api-callback/
-		*/
+		// We are extending the WooCommerce API here, so your postback URL will be:
+		// http://yoursite.com/wc-api/wpappstore-integration/
 		add_action( 'woocommerce_api_wpappstore-integration', array( $this, 'process_postback' ) );
 
+		http://yoursite.com/?wc-api=CALLBACK
 		// hardcoded api key - verify that the request is coming from a trusted source
-		$this->api_key = 'test_key';
+		$this->api_key = '';
+
+		// SKU prefix that you use on all your products in WP App Store
+		$this->sku_prefix = '';
+
+		// Email address where you'd like to receive errors
+		$this->email_errors = '';
 
 		$user_was_created = false;
 	}
@@ -37,6 +36,8 @@ class WC_WPAS {
 		$_POST['billing_email'] = $postback['username'];
 		$_POST['billing_first_name'] = $postback['first_name'];
 		$_POST['billing_last_name'] = $postback['last_name'];
+
+		$_POST['terms'] = 1; // Accept terms & conditions
 
 		// Hook in our custom actions and filters
 		add_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
@@ -70,7 +71,7 @@ class WC_WPAS {
 
 		// Here's where the magic happens, adds the product to the cart and processes the checkout
 		// All the regular WooCommerce filters and actions are added so any licenses / subscriptions / email are also processed
-		$woocommerce->cart->add_to_cart( $postback['sku'], 1 );
+		$woocommerce->cart->add_to_cart( str_replace( $this->sku_prefix, '', $postback['sku'] ), 1 );
 		$checkout = $woocommerce->checkout();
 		$checkout->process_checkout();
 
@@ -79,6 +80,10 @@ class WC_WPAS {
 		remove_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
 		remove_action( 'woocommerce_payment_complete', array( $this, 'order_complete' ) );
 		remove_action( 'woocommerce_email', array( $this, 'unhook_those_pesky_emails' ) );
+
+		if ( $this->email_errors && $woocommerce->errors ) {
+			mail( $this->email_errors, 'WP App Store postback error', print_r( $woocommerce->errors, true ) );
+		}
 
 		// check for errors
 		// echo '<pre>' . print_r( $woocommerce->errors, true ) . '</pre>';
@@ -133,7 +138,7 @@ class WC_WPAS {
 	function order_complete( $order_id ) {
 		update_post_meta( $order_id, '_order_total', $this->postback['commission'] );
 		$order = new WC_Order( $order_id );
-		$order->add_order_note( 'This order was automatically added as a result of a purchase originating at WP App Store.' );
+		$order->add_order_note( 'Order created from a WP App Store postback.' );
 		add_post_meta( $order_id, '_woocommerce_is_wpas_integration', true, true );
 		$this->send_order_complete_email( $order );
 	}
@@ -269,4 +274,3 @@ class WC_WPAS {
 	}
 
 }
-?>
