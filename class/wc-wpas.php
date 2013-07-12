@@ -2,6 +2,7 @@
 class WC_WPAS {
 	private $api_key;
 	private $postback;
+	private $user_was_created;
 
 	function __construct() {
 		/*
@@ -20,10 +21,13 @@ class WC_WPAS {
 
 		// hardcoded api key - verify that the request is coming from a trusted source
 		$this->api_key = 'test_key';
+
+		$user_was_created = false;
 	}
 
 	function process_postback() {
 		global $woocommerce;
+		$mailer = $woocommerce->mailer();
 
 		$postback = $this->parse_postback();
 		$this->postback = $postback;
@@ -38,6 +42,7 @@ class WC_WPAS {
 		add_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
 		add_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
 		add_action( 'woocommerce_payment_complete', array( $this, 'order_complete' ) );
+		remove_action( 'woocommerce_order_status_completed_notification', array( $mailer->emails['WC_Email_Customer_Completed_Order'], 'trigger' ) );
 
 		$user = get_user_by( 'login', $postback['username'] );
 
@@ -54,6 +59,7 @@ class WC_WPAS {
 			$password = wp_generate_password();
 			$_POST['account_password'] = $password;
 			$_POST['account_password-2'] = $password;
+			$this->user_was_created = true;
 		}
 
 		// Required, otherwise WooCommerce rejects the request
@@ -72,6 +78,7 @@ class WC_WPAS {
 		remove_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
 		remove_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
 		remove_action( 'woocommerce_payment_complete', array( $this, 'order_complete' ) );
+		remove_action( 'woocommerce_email', array( $this, 'unhook_those_pesky_emails' ) );
 
 		// check for errors
 		// echo '<pre>' . print_r( $woocommerce->errors, true ) . '</pre>';
@@ -128,6 +135,137 @@ class WC_WPAS {
 		$order = new WC_Order( $order_id );
 		$order->add_order_note( 'This order was automatically added as a result of a purchase originating at WP App Store.' );
 		add_post_meta( $order_id, '_woocommerce_is_wpas_integration', true, true );
+		$this->send_order_complete_email( $order );
+	}
+
+	function send_order_complete_email( $order ) {
+		global $woocommerce, $wpdb;
+		$order_date = date_i18n( woocommerce_date_format(), strtotime( $order->order_date ) );
+		$blog_name = wp_specialchars_decode( get_option( 'blogname' ), ENT_QUOTES );
+		$subject = sprintf( 'Your %s order from %s is complete - download your files', $blog_name, $order_date );
+		$headers = "Content-Type: text/html\r\n";
+		$to = $order->billing_email;
+
+		$email_heading = 'Your order is complete - download your files';
+
+		ob_start();
+		woocommerce_get_template( 'emails/email-header.php', array( 'email_heading' => $email_heading ) );
+		?>
+
+		<p><?php printf( __( "Hi there. Your recent order on %s has been completed. Your order details are shown below for your reference:", 'woocommerce' ), get_option( 'blogname' ) ); ?></p>
+
+		<?php do_action('woocommerce_email_before_order_table', $order, false); ?>
+
+		<h2><?php echo __( 'Order:', 'woocommerce' ) . ' ' . $order->get_order_number(); ?></h2>
+
+		<table cellspacing="0" cellpadding="6" style="width: 100%; border: 1px solid #eee;" border="1" bordercolor="#eee">
+			<thead>
+				<tr>
+					<th scope="col" style="text-align:left; border: 1px solid #eee;"><?php _e( 'Product', 'woocommerce' ); ?></th>
+					<th scope="col" style="text-align:left; border: 1px solid #eee;"><?php _e( 'Download', 'woocommerce' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php
+
+				$items = $order->get_items();
+				$show_download_links = true;
+				foreach( $items as $item ) :
+
+					// Get/prep product data
+					$_product = $order->get_product_from_item( $item );
+					?>
+					<tr>
+						<td style="text-align:left; vertical-align:middle; border: 1px solid #eee;"><?php
+							echo 	apply_filters( 'woocommerce_order_product_title', $item['name'], $_product );
+						?>
+						</td>
+						<td style="text-align:left; vertical-align:middle; border: 1px solid #eee;">
+							<?php
+							// File URLs
+							if ( $show_download_links && $_product->exists() && $_product->is_downloadable() ) {
+								$download_file_urls = $order->get_downloadable_file_urls( $item['product_id'], $item['variation_id'], $item );
+								foreach ( $download_file_urls as $file_url => $download_file_url ) {
+									echo '<a href="' . $download_file_url . '" target="_blank">' . preg_replace( '/\?.*/', '', basename( $file_url ) ) . '</a>';
+								}
+							}
+							?>
+						</td>
+					</tr>
+
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+
+		<?php do_action('woocommerce_email_after_order_table', $order, false); ?>
+
+		<?php do_action( 'woocommerce_email_order_meta', $order, false ); ?>
+
+		<?php
+
+		if( $this->user_was_created ) :
+
+			$key = $wpdb->get_var( $wpdb->prepare( "SELECT user_activation_key FROM $wpdb->users WHERE user_login = %s", $order->billing_email ) );
+
+			if ( empty( $key ) ) {
+
+				// Generate something random for a key...
+				$key = wp_generate_password( 20, false );
+
+				do_action('retrieve_password_key', $order->billing_email, $key);
+
+				// Now insert the new md5 key into the db
+				$wpdb->update( $wpdb->users, array( 'user_activation_key' => $key ), array( 'user_login' => $order->billing_email ) );
+			}
+
+			$lost_password_link = home_url( $path = '/my-account/lost-password/' );
+			$args = array(
+				'key'	=> $key,
+				'login'	=> $order->billing_email,
+			);
+			$lost_password_link = add_query_arg( $args, $lost_password_link );
+
+		endif;
+
+		?>
+
+		<h2><?php _e( 'Login details', 'woocommerce' ); ?></h2>
+
+		<?php if ($order->billing_email) : ?>
+			<p><strong><?php _e( 'Email:', 'woocommerce' ); ?></strong> <?php echo $order->billing_email; ?></p>
+			<?php if( $this->user_was_created ) : ?>
+			<p>You may reset your password <a href="<?php echo $lost_password_link; ?>">here</a>.</p>
+			<?php else : ?>
+			<p>You may log in <a href="<?php echo home_url( '/my-account/'); ?>">here</a>.</p>
+			<?php endif; ?>
+		<?php endif; ?>
+
+		<?php
+		woocommerce_get_template( 'emails/email-footer.php' );
+
+		$message = ob_get_clean();
+
+		add_filter( 'wp_mail_from', array( $this, 'get_from_address' ) );
+		add_filter( 'wp_mail_from_name', array( $this, 'get_from_name' ) );
+		add_filter( 'wp_mail_content_type', array( $this, 'get_content_type' ) );
+
+		wp_mail( $to, $subject, $message, $headers );
+
+		remove_filter( 'wp_mail_from', array( $this, 'get_from_address' ) );
+		remove_filter( 'wp_mail_from_name', array( $this, 'get_from_name' ) );
+		remove_filter( 'wp_mail_content_type', array( $this, 'get_content_type' ) );
+	}
+
+	function get_from_name() {
+		return wp_specialchars_decode( esc_html( get_option( 'woocommerce_email_from_name' ) ) );
+	}
+
+	function get_from_address() {
+		return sanitize_email( get_option( 'woocommerce_email_from_address' ) );
+	}
+
+	function get_content_type() {
+		return 'text/html';
 	}
 
 }
