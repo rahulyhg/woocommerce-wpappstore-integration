@@ -76,7 +76,6 @@ class WC_WPAS {
 		remove_filter( 'woocommerce_checkout_fields' , array( $this, 'temporarily_remove_required_fields' ) );
 		remove_filter( 'woocommerce_cart_needs_payment' , array( $this, 'temporarily_disable_payment' ) );
 		remove_action( 'woocommerce_payment_complete', array( $this, 'order_complete' ) );
-		remove_action( 'woocommerce_email', array( $this, 'unhook_those_pesky_emails' ) );
 
 		if ( $this->email_errors && $woocommerce->errors ) {
 			mail( $this->email_errors, 'WP App Store postback error', print_r( $woocommerce->errors, true ) );
